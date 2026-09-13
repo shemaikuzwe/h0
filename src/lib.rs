@@ -1,5 +1,7 @@
 pub mod commands;
+pub mod libvirt;
 pub mod models;
+pub mod provision;
 pub mod schema;
 
 use anyhow::Context;

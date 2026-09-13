@@ -19,5 +19,8 @@ diesel::table! {
         status -> VmStatus,
         created_at -> Nullable<Timestamp>,
         updated_at -> Nullable<Timestamp>,
+        #[max_length = 45]
+        ip_address -> Varchar,
+        disk -> Int4,
     }
 }

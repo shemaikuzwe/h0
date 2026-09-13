@@ -1,0 +1,4 @@
+ALTER TABLE vms
+    ADD COLUMN ip_address VARCHAR(45) NOT NULL UNIQUE,
+    ADD COLUMN disk INT NOT NULL DEFAULT 10,
+    ADD CONSTRAINT vms_name_unique UNIQUE (name);

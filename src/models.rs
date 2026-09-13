@@ -25,6 +25,8 @@ pub struct Vm {
     pub status: VmStatus,
     pub created_at: Option<chrono::NaiveDateTime>,
     pub updated_at: Option<chrono::NaiveDateTime>,
+    pub ip_address: String,
+    pub disk: i32,
 }
 
 #[derive(Debug, Insertable)]
@@ -34,4 +36,29 @@ pub struct NewVm {
     pub cpu: i32,
     pub memory: i32,
     pub status: VmStatus,
+    pub ip_address: String,
+    pub disk: i32,
+}
+
+/// User-provided spec; ip and status are filled in by `commands::create`.
+#[derive(Debug)]
+pub struct CreateVm {
+    pub name: String,
+    pub cpu: i32,
+    pub memory: i32,
+    pub disk: i32,
+}
+
+#[derive(Debug, AsChangeset)]
+#[diesel(table_name = vms)]
+pub struct VmUpdate {
+    pub cpu: Option<i32>,
+    pub memory: Option<i32>,
+    pub disk: Option<i32>,
+}
+
+impl VmUpdate {
+    pub fn is_empty(&self) -> bool {
+        self.cpu.is_none() && self.memory.is_none() && self.disk.is_none()
+    }
 }

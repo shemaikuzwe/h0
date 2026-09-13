@@ -11,3 +11,4 @@ diesel = { version ="2.3.13", features=["postgres", "chrono"] }
 diesel-derive-enum = { version = "2.1", features = ["postgres"] }
 dotenvy = "0.15"
 serde = { version = "1.0.229", features = ["derive"] }
+virt = "0.4.3"
