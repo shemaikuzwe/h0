@@ -29,12 +29,16 @@ impl Libvirt {
     }
 
     pub fn start(&self, name: &str) -> anyhow::Result<()> {
-        self.domain(name)?.create()?;
+        let dom = self.domain(name)?;
+        dom.create()?;
+        dom.set_autostart(true)?;
         Ok(())
     }
 
     pub fn shutdown(&self, name: &str) -> anyhow::Result<()> {
-        self.domain(name)?.shutdown()?;
+        let dom = self.domain(name)?;
+        dom.set_autostart(false)?;
+        dom.shutdown()?;
         Ok(())
     }
     pub fn reboot(&self, name: &str) -> anyhow::Result<()> {
@@ -44,7 +48,6 @@ impl Libvirt {
         }
         Ok(())
     }
-
     pub fn resize_disk(&self, vm: &Vm) -> anyhow::Result<()> {
         let dom = self.domain(&vm.name)?;
         if !dom.is_active()? {
@@ -55,7 +58,6 @@ impl Libvirt {
         Ok(())
     }
 
-    /// Powers off if running, then unregisters the domain.
     pub fn remove(&self, name: &str) -> anyhow::Result<()> {
         let dom = self.domain(name)?;
         if dom.is_active()? {

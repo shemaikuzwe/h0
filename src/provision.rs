@@ -9,8 +9,8 @@ use std::process::Command;
 
 use crate::schema::vms::dsl as vm;
 
-pub const BASE: &str = "/var/lib/libvirt/images/hostv1";
-const IMAGE: &str = "/var/lib/libvirt/images/hostv1/images/noble.img";
+pub const BASE: &str = "/var/lib/libvirt/images/h0";
+const IMAGE: &str = "/var/lib/libvirt/images/h0/images/noble.img";
 
 // 192.168.122.100-254 on libvirt's default network
 const IP_POOL: std::ops::RangeInclusive<u8> = 100..=254;
@@ -150,7 +150,7 @@ users:
 }
 
 fn tempdir(name: &str) -> anyhow::Result<PathBuf> {
-    let p = std::env::temp_dir().join(format!("hostv1-{name}"));
+    let p = std::env::temp_dir().join(format!("h0-{name}"));
     fs::create_dir_all(&p)?;
     Ok(p)
 }

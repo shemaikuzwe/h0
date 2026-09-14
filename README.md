@@ -1,10 +1,9 @@
-# hostv1
+# h0
 
-CLI to create and manage KVM virtual machines. Postgres (via diesel) is the
-source of truth for VM specs; libvirt/QEMU does the actual virtualization.
+CLI to create and manage VMs with ease. abstraction over libvirt,QEMU and KVM.
 
 ```
-hostv1 CLI + Postgres        ← this repo: create / list / update / run / stop / delete
+h0 CLI + Postgres        ← this repo: create / list / update / run / stop / delete
         │
      libvirtd                 ← daemon that owns the VM processes (virsh talks to it)
         │
@@ -19,7 +18,9 @@ hostv1 CLI + Postgres        ← this repo: create / list / update / run / stop 
 - Postgres
 - Rust toolchain
 
-### 2. Install virtualization packages (once)
+### 2. Install virtualization packages 
+
+###  Or check out the [installation guide](installation.md)
 
 ```bash
 sudo apt install -y qemu-kvm libvirt-daemon-system libvirt-dev cloud-image-utils
@@ -43,22 +44,22 @@ VM files must live under `/var/lib/libvirt/images` — Ubuntu's AppArmor profile
 blocks libvirt from reading disks in `/home`.
 
 ```bash
-sudo mkdir -p /var/lib/libvirt/images/hostv1
-sudo chown $USER:$USER /var/lib/libvirt/images/hostv1
+sudo mkdir -p /var/lib/libvirt/images/h0
+sudo chown $USER:$USER /var/lib/libvirt/images/h0
 ```
 
 Download the Ubuntu cloud image every VM is cloned from:
 
 ```bash
-mkdir -p /var/lib/libvirt/images/hostv1/images
-curl -L -o /var/lib/libvirt/images/hostv1/images/noble.img \
+mkdir -p /var/lib/libvirt/images/h0/images
+curl -L -o /var/lib/libvirt/images/h0/images/noble.img \
   https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
 ```
 
 Layout:
 
 ```
-/var/lib/libvirt/images/hostv1/
+/var/lib/libvirt/images/h0/
   images/noble.img        base Ubuntu 24.04 cloud image (read-only, shared)
   <vm-name>/
     disk.qcow2            VM's persistent disk, copy-on-write clone of noble.img
@@ -70,7 +71,7 @@ Layout:
 ### 4. Database
 
 ```bash
-echo 'DATABASE_URL=postgres://user:pass@localhost/hostv1' > .env
+echo 'DATABASE_URL=postgres://user:pass@localhost/h0' > .env
 cargo install diesel_cli --no-default-features --features postgres
 diesel setup            # creates db + runs migrations/
 ```
@@ -79,7 +80,7 @@ diesel setup            # creates db + runs migrations/
 
 ```bash
 cargo run -- --help
-cargo run -- create myvm --cpu 2 --memory 1024 --disk 20   # picks a free IP, builds files, defines domain
+cargo run -- create myvm --cpu 2 --memory 1024 --disk 20 --user test_user   # picks a free IP, builds files, defines domain
 cargo run -- run myvm                                       # boot; ssh <user>@<ip> once up (~30s)
 cargo run -- update myvm --cpu 4                            # applies on next boot; --disk can only grow
 cargo run -- stop myvm                                      # graceful shutdown
@@ -100,69 +101,14 @@ virsh -c qemu:///system net-edit default
 virsh -c qemu:///system net-destroy default && virsh -c qemu:///system net-start default
 ```
 
-## Creating a VM by hand (what the CLI automates)
-
-Useful to understand the pieces. `D=/var/lib/libvirt/images/hostv1`, VM name `test`.
+## Useful `virsh` Commands
 
 ```bash
-mkdir -p $D/test && cd $D/test
-
-# 1. identity for first boot
-cat > user-data <<EOF
-#cloud-config
-hostname: test
-users:
-  - name: $USER
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    shell: /bin/bash
-    lock_passwd: false
-    plain_text_passwd: test
-    ssh_authorized_keys:
-      - $(cat ~/.ssh/id_ed25519.pub)
-EOF
-printf 'instance-id: test\nlocal-hostname: test\n' > meta-data
-cloud-localds seed.iso user-data meta-data
-
-# 2. persistent disk, 10G, backed by the shared image
-qemu-img create -f qcow2 -F qcow2 -b $D/images/noble.img disk.qcow2 10G
-
-# 3. libvirt definition
-cat > domain.xml <<EOF
-<domain type='kvm'>
-  <name>test</name>
-  <memory unit='MiB'>512</memory>
-  <vcpu>1</vcpu>
-  <os><type arch='x86_64' machine='q35'>hvm</type></os>
-  <cpu mode='host-passthrough'/>
-  <devices>
-    <disk type='file' device='disk'>
-      <driver name='qemu' type='qcow2'/>
-      <source file='$D/test/disk.qcow2'/>
-      <target dev='vda' bus='virtio'/>
-    </disk>
-    <disk type='file' device='cdrom'>
-      <driver name='qemu' type='raw'/>
-      <source file='$D/test/seed.iso'/>
-      <target dev='sda' bus='sata'/>
-      <readonly/>
-    </disk>
-    <interface type='network'>
-      <source network='default'/>
-      <model type='virtio'/>
-    </interface>
-    <serial type='pty'/>
-    <console type='pty'><target type='serial'/></console>
-  </devices>
-</domain>
-EOF
-
 virsh -c qemu:///system define domain.xml   # = create
 virsh -c qemu:///system start test          # = run
 virsh -c qemu:///system domifaddr test      # IP on the default NAT network
 ssh $USER@<ip>                              # password "test" on the console
 virsh -c qemu:///system shutdown test       # = stop (graceful)
 virsh -c qemu:///system undefine test       # = delete (then rm -rf $D/test)
+virsh -c qemu:///system console test        # attach to serial console exit with Ctrl+]
 ```
-
-Handy: `virsh -c qemu:///system console test` attaches to the serial console
-(exit with `Ctrl+]`).

@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use hostv1::{
+use h0::{
     commands, establish_connection,
     models::{CreateVm, VmUpdate},
 };
