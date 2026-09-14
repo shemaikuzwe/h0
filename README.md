@@ -20,7 +20,7 @@ h0 CLI + Postgres        ← this repo: create / list / update / run / stop / de
 
 ### 2. Install virtualization packages 
 
-###  Or check out the [installation guide](installation.md)
+####  Or check out the [installation guide](installation.md)
 
 ```bash
 sudo apt install -y qemu-kvm libvirt-daemon-system libvirt-dev cloud-image-utils

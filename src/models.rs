@@ -22,7 +22,7 @@ impl fmt::Display for VmStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Running => write!(f, "{}", "running".green()),
-            Self::Stopped => write!(f, "{}", "stoppped".red()),
+            Self::Stopped => write!(f, "{}", "stopped".red()),
             Self::Suspended => write!(f, "{}", "suspended".yellow()),
         }
     }
@@ -44,10 +44,10 @@ pub enum Image {
 impl fmt::Display for Image {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Image::Ubuntu24 => f.write_str("ubuntu24"),
-            Image::Ubuntu22 => f.write_str("ubuntu22"),
-            Image::Centos10 => f.write_str("centos10"),
-            Image::Kali => f.write_str("kali"),
+            Image::Ubuntu24 => f.pad("ubuntu24"),
+            Image::Ubuntu22 => f.pad("ubuntu22"),
+            Image::Centos10 => f.pad("centos10"),
+            Image::Kali => f.pad("kali"),
         }
     }
 }
