@@ -38,7 +38,10 @@ impl Libvirt {
         Ok(())
     }
     pub fn reboot(&self, name: &str) -> anyhow::Result<()> {
-        self.domain(name)?.reboot(sys::VIR_DOMAIN_REBOOT_DEFAULT)?;
+        let domain = self.domain(name)?;
+        if domain.is_active()? {
+            self.domain(name)?.reboot(sys::VIR_DOMAIN_REBOOT_DEFAULT)?;
+        }
         Ok(())
     }
 

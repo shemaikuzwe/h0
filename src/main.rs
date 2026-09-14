@@ -15,28 +15,45 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     #[command(about = "Creates a VM (default cpu 1, memory 500MB, disk 10GB)")]
-    Create(VmArgs),
+    Create(CreateVmArgs),
     #[command(about = "Lists all VMs")]
     List,
     #[command(about = "Updates a VM by name")]
-    Update(VmArgs),
+    Update(UpdateVmArgs),
     #[command(about = "Deletes a VM by name")]
     Delete { name: String },
     #[command(about = "Runs a stopped vm")]
     Run { name: String },
     #[command(about = "Gracefully shuts down a running VM")]
     Stop { name: String },
+    #[command(about = "Reboots vm")]
+    Reboot { name: String },
 }
 
 #[derive(Debug, Parser)]
-struct VmArgs {
+struct UpdateVmArgs {
     name: String,
-    #[arg(long)]
+    #[arg(long, help = "VCPU size (defualt 1)")]
     cpu: Option<i32>,
-    #[arg(long)]
+    #[arg(long, help = "Memory size (default 500MB)")]
     memory: Option<i32>,
     #[arg(long, help = "Disk size in GB (default 10)")]
     disk: Option<i32>,
+    #[arg(long, help = "Reboot VM for the changes to take effect.(default True)")]
+    reboot: Option<bool>,
+}
+
+#[derive(Debug, Parser)]
+struct CreateVmArgs {
+    name: String,
+    #[arg(long, help = "VCPU size (defualt 1)")]
+    cpu: Option<i32>,
+    #[arg(long, help = "Memory size (default 500MB)")]
+    memory: Option<i32>,
+    #[arg(long, help = "Disk size in GB (default 10)")]
+    disk: Option<i32>,
+    #[arg(long, help = "Default non-root VM user ")]
+    user: String,
 }
 
 impl Commands {
@@ -47,13 +64,14 @@ impl Commands {
                 let vm = commands::create(
                     &mut conn,
                     CreateVm {
-                        name: args.name.clone(),
+                        name: args.name.to_owned(),
                         cpu: args.cpu.unwrap_or(1),
                         memory: args.memory.unwrap_or(500),
                         disk: args.disk.unwrap_or(10),
+                        user: args.user.to_owned(),
                     },
                 )?;
-                println!("created {} ({})", vm.name, vm.ip_address);
+                println!("created {}: ssh {}@{}", vm.name, args.user, vm.ip_address);
             }
             Commands::Delete { name } => {
                 commands::delete(&mut conn, name)?;
@@ -85,7 +103,8 @@ impl Commands {
                     memory: args.memory,
                     disk: args.disk,
                 };
-                let vm = commands::update(&mut conn, &args.name, changes)?;
+                let vm =
+                    commands::update(&mut conn, &args.name, changes, args.reboot.unwrap_or(true))?;
                 println!("updated {}", vm.name);
             }
             Commands::Run { name } => {
@@ -95,6 +114,10 @@ impl Commands {
             Commands::Stop { name } => {
                 commands::stop(&mut conn, name)?;
                 println!("stopping {name}");
+            }
+            Commands::Reboot { name } => {
+                commands::reboot(name)?;
+                println!("Rebooted {name}")
             }
         }
         Ok(())

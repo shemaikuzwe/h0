@@ -11,9 +11,6 @@ use crate::schema::vms::dsl as vm;
 
 pub const BASE: &str = "/var/lib/libvirt/images/hostv1";
 const IMAGE: &str = "/var/lib/libvirt/images/hostv1/images/noble.img";
-// TODO: become VM fields (user, password, ssh_key)
-const USER: &str = "shema";
-const PASSWORD: &str = "test";
 
 // 192.168.122.100-254 on libvirt's default network
 const IP_POOL: std::ops::RangeInclusive<u8> = 100..=254;
@@ -31,7 +28,7 @@ fn dir(name: &str) -> PathBuf {
 }
 
 /// Creates the VM directory with its cloud-init seed and COW disk.
-pub fn create_files(vm: &Vm) -> anyhow::Result<()> {
+pub fn create_files(vm: &Vm, user: &str, password: &str) -> anyhow::Result<()> {
     let d = dir(&vm.name);
     fs::create_dir_all(&d)?;
 
@@ -39,7 +36,7 @@ pub fn create_files(vm: &Vm) -> anyhow::Result<()> {
     let tmp = tempdir(&vm.name)?;
     let user_data = tmp.join("user-data");
     let meta_data = tmp.join("meta-data");
-    fs::write(&user_data, init_user_data(&vm.name)?)?;
+    fs::write(&user_data, init_user_data(&vm.name, user, password)?)?;
     fs::write(
         &meta_data,
         format!("instance-id: {0}\nlocal-hostname: {0}\n", vm.name),
@@ -88,6 +85,7 @@ pub fn remove_files(name: &str) -> anyhow::Result<()> {
 pub fn mac(ip: &str) -> anyhow::Result<String> {
     let o: Vec<u8> = ip.split('.').map(|s| s.parse()).collect::<Result<_, _>>()?;
     anyhow::ensure!(o.len() == 4, "invalid ip {ip}");
+    //default mac address prefix for QEMU/KVM
     Ok(format!("52:54:00:{:02x}:{:02x}:{:02x}", o[1], o[2], o[3]))
 }
 
@@ -130,19 +128,20 @@ pub fn domain_xml(vm: &Vm) -> anyhow::Result<String> {
     ))
 }
 
-fn init_user_data(hostname: &str) -> anyhow::Result<String> {
+fn init_user_data(hostname: &str, user: &str, password: &str) -> anyhow::Result<String> {
     let home = std::env::var("HOME")?;
     let key = fs::read_to_string(format!("{home}/.ssh/id_ed25519.pub"))
         .context("reading ~/.ssh/id_ed25519.pub")?;
     Ok(format!(
         "#cloud-config
 hostname: {hostname}
+ssh_pwauth: true
 users:
-  - name: {USER}
+  - name: {user}
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
     lock_passwd: false
-    plain_text_passwd: {PASSWORD}
+    plain_text_passwd: {password}
     ssh_authorized_keys:
       - {}
 ",

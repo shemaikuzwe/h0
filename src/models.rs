@@ -46,6 +46,7 @@ pub struct CreateVm {
     pub cpu: i32,
     pub memory: i32,
     pub disk: i32,
+    pub user: String,
 }
 
 #[derive(Debug, AsChangeset)]

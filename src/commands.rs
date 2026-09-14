@@ -6,6 +6,7 @@ use diesel::PgConnection;
 use diesel::prelude::*;
 
 pub fn create(conn: &mut PgConnection, spec: CreateVm) -> anyhow::Result<Vm> {
+    let password = rpassword::prompt_password("User password: ").context("Password is required")?;
     let new_vm = NewVm {
         name: spec.name,
         cpu: spec.cpu,
@@ -14,14 +15,17 @@ pub fn create(conn: &mut PgConnection, spec: CreateVm) -> anyhow::Result<Vm> {
         status: VmStatus::Stopped,
         ip_address: provision::next_free_ip(conn)?,
     };
-    let created = diesel::insert_into(vm::vms)
-        .values(&new_vm)
-        .get_result::<Vm>(conn)?;
-    provision::create_files(&created)?;
-    let lv = libvirt::connect()?;
-    lv.define(&created)?;
-    lv.reserve_ip(&created)?;
-    Ok(created)
+    conn.transaction(|conn| {
+        let created = diesel::insert_into(vm::vms)
+            .values(&new_vm)
+            .get_result::<Vm>(conn)?;
+        provision::create_files(&created, &spec.user, &password)?;
+        let lv = libvirt::connect()?;
+        lv.define(&created)?;
+        lv.reserve_ip(&created)?;
+        run(conn, &created.name)?;
+        Ok(created)
+    })
 }
 
 pub fn list(conn: &mut PgConnection) -> anyhow::Result<Vec<Vm>> {
@@ -29,20 +33,30 @@ pub fn list(conn: &mut PgConnection) -> anyhow::Result<Vec<Vm>> {
     Ok(all)
 }
 
-pub fn update(conn: &mut PgConnection, name: &str, changes: VmUpdate) -> anyhow::Result<Vm> {
+pub fn update(
+    conn: &mut PgConnection,
+    name: &str,
+    changes: VmUpdate,
+    reboot: bool,
+) -> anyhow::Result<Vm> {
     let target = vm::vms.filter(vm::name.eq(name));
     // diesel rejects an empty changeset, so just return the current row
     if changes.is_empty() {
         return Ok(target.select(Vm::as_select()).first(conn)?);
     }
-    let updated: Vm = diesel::update(target).set(&changes).get_result(conn)?;
-    let lv = libvirt::connect()?;
-    if changes.disk.is_some() {
-        lv.resize_disk(&updated)?;
-    }
-    // new cpu/memory apply on next boot
-    lv.define(&updated)?;
-    Ok(updated)
+    conn.transaction(|conn| {
+        let updated: Vm = diesel::update(target).set(&changes).get_result(conn)?;
+        let lv = libvirt::connect()?;
+        if changes.disk.is_some() {
+            lv.resize_disk(&updated)?;
+        }
+        // new cpu/memory apply on next boot
+        lv.define(&updated)?;
+        if reboot {
+            lv.reboot(name)?;
+        }
+        Ok(updated)
+    })
 }
 
 pub fn run(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
