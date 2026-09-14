@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use colored::Colorize;
 use hostv1::{
     commands, establish_connection,
     models::{CreateVm, VmUpdate},
@@ -71,11 +72,16 @@ impl Commands {
                         user: args.user.to_owned(),
                     },
                 )?;
-                println!("created {}: ssh {}@{}", vm.name, args.user, vm.ip_address);
+                println!(
+                    "created {}: ssh {}@{}",
+                    vm.name.green(),
+                    args.user.blue(),
+                    vm.ip_address.blue()
+                );
             }
             Commands::Delete { name } => {
                 commands::delete(&mut conn, name)?;
-                println!("deleted {name}");
+                println!("deleted {}", name.red());
             }
             Commands::List => {
                 let all = commands::list(&mut conn)?;
@@ -90,7 +96,7 @@ impl Commands {
                 for vm in all {
                     let memory = format!("{} MB", vm.memory);
                     let disk = format!("{} GB", vm.disk);
-                    let status = format!("{:?}", vm.status).to_lowercase();
+                    let status = format!("{}", vm.status.to_string());
                     println!(
                         "{:<10}{:<8}{:<10}{:<8}{:<16}{}",
                         vm.name, vm.cpu, memory, disk, vm.ip_address, status
@@ -105,19 +111,19 @@ impl Commands {
                 };
                 let vm =
                     commands::update(&mut conn, &args.name, changes, args.reboot.unwrap_or(true))?;
-                println!("updated {}", vm.name);
+                println!("updated {}", vm.name.green());
             }
             Commands::Run { name } => {
                 commands::run(&mut conn, name)?;
-                println!("started {name}");
+                println!("started {}", name.green());
             }
             Commands::Stop { name } => {
                 commands::stop(&mut conn, name)?;
-                println!("stopping {name}");
+                println!("stopping {}", name.red());
             }
             Commands::Reboot { name } => {
                 commands::reboot(name)?;
-                println!("Rebooted {name}")
+                println!("Rebooted {}", name.green())
             }
         }
         Ok(())

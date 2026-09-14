@@ -1,4 +1,7 @@
+use std::fmt::{self};
+
 use crate::schema::{sql_types::VmStatus as VmStatusSql, vms};
+use colored::Colorize;
 use diesel::prelude::*;
 use diesel_derive_enum::DbEnum;
 
@@ -12,6 +15,16 @@ pub enum VmStatus {
     Stopped,
     #[db_rename = "suspended"]
     Suspended,
+}
+
+impl fmt::Display for VmStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Running => write!(f, "{}", "running".green()),
+            Self::Stopped => write!(f, "{}", "stoppped".red()),
+            Self::Suspended => write!(f, "{}", "suspended".yellow()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Queryable, Selectable)]
