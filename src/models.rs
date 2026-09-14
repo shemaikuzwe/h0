@@ -1,6 +1,7 @@
 use std::fmt::{self};
 
-use crate::schema::{sql_types::VmStatus as VmStatusSql, vms};
+use crate::schema::{sql_types::VmImage as VmImageSql, sql_types::VmStatus as VmStatusSql, vms};
+use clap::ValueEnum;
 use colored::Colorize;
 use diesel::prelude::*;
 use diesel_derive_enum::DbEnum;
@@ -27,6 +28,30 @@ impl fmt::Display for VmStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, DbEnum)]
+#[ExistingTypePath = "VmImageSql"]
+#[DbValueStyle = "verbatim"]
+pub enum Image {
+    #[db_rename = "ubuntu24"]
+    Ubuntu24,
+    #[db_rename = "ubuntu22"]
+    Ubuntu22,
+    #[db_rename = "centos10"]
+    Centos10,
+    #[db_rename = "kali"]
+    Kali,
+}
+impl fmt::Display for Image {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Image::Ubuntu24 => f.write_str("ubuntu24"),
+            Image::Ubuntu22 => f.write_str("ubuntu22"),
+            Image::Centos10 => f.write_str("centos10"),
+            Image::Kali => f.write_str("kali"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Queryable, Selectable)]
 #[diesel(table_name = vms)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
@@ -40,6 +65,7 @@ pub struct Vm {
     pub updated_at: Option<chrono::NaiveDateTime>,
     pub ip_address: String,
     pub disk: i32,
+    pub image: Image,
 }
 
 #[derive(Debug, Insertable)]
@@ -51,6 +77,7 @@ pub struct NewVm {
     pub status: VmStatus,
     pub ip_address: String,
     pub disk: i32,
+    pub image: Image,
 }
 
 #[derive(Debug)]
@@ -60,6 +87,7 @@ pub struct CreateVm {
     pub memory: i32,
     pub disk: i32,
     pub user: String,
+    pub image: Image,
 }
 
 #[derive(Debug, AsChangeset)]

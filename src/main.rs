@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 use h0::{
     commands, establish_connection,
-    models::{CreateVm, VmUpdate},
+    models::{CreateVm, Image, VmUpdate},
 };
 
 #[derive(Parser)]
@@ -17,7 +17,7 @@ struct Cli {
 enum Commands {
     #[command(about = "Creates a VM (default cpu 1, memory 500MB, disk 10GB)")]
     Create(CreateVmArgs),
-    #[command(about = "Lists all VMs")]
+    #[command(about = "Lists all VMs", alias = "ls")]
     List,
     #[command(about = "Updates a VM by name")]
     Update(UpdateVmArgs),
@@ -55,6 +55,8 @@ struct CreateVmArgs {
     disk: Option<i32>,
     #[arg(long, help = "Default non-root VM user ")]
     user: String,
+    #[arg(long, value_enum, default_value_t = Image::Ubuntu24, help = "Base image")]
+    image: Image,
 }
 
 impl Commands {
@@ -70,6 +72,7 @@ impl Commands {
                         memory: args.memory.unwrap_or(500),
                         disk: args.disk.unwrap_or(10),
                         user: args.user.to_owned(),
+                        image: args.image,
                     },
                 )?;
                 println!(
@@ -90,16 +93,16 @@ impl Commands {
                     return Ok(());
                 }
                 println!(
-                    "{:<10}{:<8}{:<10}{:<8}{:<16}{}",
-                    "NAME", "CPUS", "MEMORY", "DISK", "IP", "STATUS"
+                    "{:<10}{:<10}{:<8}{:<10}{:<8}{:<16}{}",
+                    "NAME", "IMAGE", "CPUS", "MEMORY", "DISK", "IP", "STATUS"
                 );
                 for vm in all {
                     let memory = format!("{} MB", vm.memory);
                     let disk = format!("{} GB", vm.disk);
-                    let status = format!("{}", vm.status.to_string());
+                    let status = format!("{}", vm.status);
                     println!(
-                        "{:<10}{:<8}{:<10}{:<8}{:<16}{}",
-                        vm.name, vm.cpu, memory, disk, vm.ip_address, status
+                        "{:<10}{:<10}{:<8}{:<10}{:<8}{:<16}{}",
+                        vm.name, vm.image, vm.cpu, memory, disk, vm.ip_address, status
                     );
                 }
             }

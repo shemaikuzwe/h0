@@ -14,6 +14,7 @@ pub fn create(conn: &mut PgConnection, spec: CreateVm) -> anyhow::Result<Vm> {
         disk: spec.disk,
         status: VmStatus::Stopped,
         ip_address: provision::next_free_ip(conn)?,
+        image: spec.image,
     };
     conn.transaction(|conn| {
         let created = diesel::insert_into(vm::vms)

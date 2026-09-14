@@ -1,0 +1,2 @@
+ALTER TABLE vms DROP COLUMN image;
+DROP TYPE vm_image;

@@ -1,4 +1,4 @@
-use crate::models::Vm;
+use crate::models::{Image, Vm};
 use anyhow::Context;
 use diesel::PgConnection;
 use diesel::prelude::*;
@@ -10,7 +10,6 @@ use std::process::Command;
 use crate::schema::vms::dsl as vm;
 
 pub const BASE: &str = "/var/lib/libvirt/images/h0";
-const IMAGE: &str = "/var/lib/libvirt/images/h0/images/noble.img";
 
 // 192.168.122.100-254 on libvirt's default network
 const IP_POOL: std::ops::RangeInclusive<u8> = 100..=254;
@@ -27,8 +26,17 @@ fn dir(name: &str) -> PathBuf {
     Path::new(BASE).join(name)
 }
 
+fn base_image(image: Image) -> anyhow::Result<PathBuf> {
+    let p = Path::new(BASE)
+        .join("images")
+        .join(format!("{}.qcow2", image));
+    anyhow::ensure!(p.exists(), "image '{}' is not installed", image);
+    Ok(p)
+}
+
 /// Creates the VM directory with its cloud-init seed and COW disk.
 pub fn create_files(vm: &Vm, user: &str, password: &str) -> anyhow::Result<()> {
+    let image = base_image(vm.image)?;
     let d = dir(&vm.name);
     fs::create_dir_all(&d)?;
 
@@ -54,7 +62,7 @@ pub fn create_files(vm: &Vm, user: &str, password: &str) -> anyhow::Result<()> {
             "-F",
             "qcow2",
             "-b",
-            IMAGE,
+            image.to_str().context("bad path")?,
             disk.to_str().context("bad path")?,
             &format!("{}G", vm.disk),
         ],
