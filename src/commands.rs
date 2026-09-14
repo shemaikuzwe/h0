@@ -2,18 +2,8 @@ use crate::models::{CreateVm, NewVm, Vm, VmStatus, VmUpdate};
 use crate::schema::vms::dsl as vm;
 use crate::{libvirt, provision};
 use anyhow::Context;
+use diesel::PgConnection;
 use diesel::prelude::*;
-
-// 192.168.122.100-254 on libvirt's default network
-const IP_POOL: std::ops::RangeInclusive<u8> = 100..=254;
-
-fn next_free_ip(conn: &mut PgConnection) -> anyhow::Result<String> {
-    let used: Vec<String> = vm::vms.select(vm::ip_address).load(conn)?;
-    IP_POOL
-        .map(|n| format!("192.168.122.{n}"))
-        .find(|ip| !used.contains(ip))
-        .context("no free IP addresses left")
-}
 
 pub fn create(conn: &mut PgConnection, spec: CreateVm) -> anyhow::Result<Vm> {
     let new_vm = NewVm {
@@ -22,7 +12,7 @@ pub fn create(conn: &mut PgConnection, spec: CreateVm) -> anyhow::Result<Vm> {
         memory: spec.memory,
         disk: spec.disk,
         status: VmStatus::Stopped,
-        ip_address: next_free_ip(conn)?,
+        ip_address: provision::next_free_ip(conn)?,
     };
     let created = diesel::insert_into(vm::vms)
         .values(&new_vm)
@@ -46,17 +36,22 @@ pub fn update(conn: &mut PgConnection, name: &str, changes: VmUpdate) -> anyhow:
         return Ok(target.select(Vm::as_select()).first(conn)?);
     }
     let updated: Vm = diesel::update(target).set(&changes).get_result(conn)?;
+    let lv = libvirt::connect()?;
     if changes.disk.is_some() {
-        provision::resize_disk(&updated)?;
+        lv.resize_disk(&updated)?;
     }
     // new cpu/memory apply on next boot
-    libvirt::connect()?.define(&updated)?;
+    lv.define(&updated)?;
     Ok(updated)
 }
 
 pub fn run(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
     libvirt::connect()?.start(name)?;
     set_status(conn, name, VmStatus::Running)
+}
+pub fn reboot(name: &str) -> anyhow::Result<()> {
+    libvirt::connect()?.reboot(name)?;
+    Ok(())
 }
 
 pub fn stop(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {

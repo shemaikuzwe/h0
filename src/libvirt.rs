@@ -4,7 +4,7 @@ use anyhow::Context;
 use virt::connect::Connect;
 use virt::domain::Domain;
 use virt::network::Network;
-use virt::sys;
+use virt::sys::{self};
 
 pub struct Libvirt {
     conn: Connect,
@@ -18,10 +18,8 @@ pub fn connect() -> anyhow::Result<Libvirt> {
 }
 
 impl Libvirt {
-    /// Registers (or re-registers) the domain; takes effect on next boot.
     pub fn define(&self, vm: &Vm) -> anyhow::Result<()> {
         let mut xml = provision::domain_xml(vm)?;
-        // libvirt matches by name + uuid, so a redefine must reuse the existing uuid
         if let Ok(existing) = Domain::lookup_by_name(&self.conn, &vm.name) {
             let uuid = existing.get_uuid_string()?;
             xml = xml.replacen("</name>", &format!("</name>\n  <uuid>{uuid}</uuid>"), 1);
@@ -35,9 +33,22 @@ impl Libvirt {
         Ok(())
     }
 
-    /// Graceful ACPI shutdown; the guest may take a few seconds to go down.
     pub fn shutdown(&self, name: &str) -> anyhow::Result<()> {
         self.domain(name)?.shutdown()?;
+        Ok(())
+    }
+    pub fn reboot(&self, name: &str) -> anyhow::Result<()> {
+        self.domain(name)?.reboot(sys::VIR_DOMAIN_REBOOT_DEFAULT)?;
+        Ok(())
+    }
+
+    pub fn resize_disk(&self, vm: &Vm) -> anyhow::Result<()> {
+        let dom = self.domain(&vm.name)?;
+        if !dom.is_active()? {
+            return provision::resize_disk(vm);
+        }
+        let kib = u64::try_from(vm.disk)? * 1024 * 1024;
+        dom.block_resize("vda", kib, 0)?;
         Ok(())
     }
 

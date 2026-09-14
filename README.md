@@ -166,13 +166,3 @@ virsh -c qemu:///system undefine test       # = delete (then rm -rf $D/test)
 
 Handy: `virsh -c qemu:///system console test` attaches to the serial console
 (exit with `Ctrl+]`).
-
-## Why libvirt (and not Firecracker / raw KVM)
-
-- `rust-vmm/kvm` (`kvm-ioctls`) is the raw `/dev/kvm` API — for writing a
-  hypervisor, not managing VMs.
-- Firecracker is one process per VM with no daemon, no networking or storage
-  management; everything (static IPs, volumes, backgrounding) is DIY.
-- libvirt provides the daemon, networks (DHCP/static leases), storage, live
-  cpu/memory updates, and boots stock cloud images. The CLI uses the `virt`
-  crate (official Rust bindings).

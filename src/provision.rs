@@ -1,9 +1,13 @@
 use crate::models::Vm;
 use anyhow::Context;
+use diesel::PgConnection;
+use diesel::prelude::*;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use crate::schema::vms::dsl as vm;
 
 pub const BASE: &str = "/var/lib/libvirt/images/hostv1";
 const IMAGE: &str = "/var/lib/libvirt/images/hostv1/images/noble.img";
@@ -11,7 +15,18 @@ const IMAGE: &str = "/var/lib/libvirt/images/hostv1/images/noble.img";
 const USER: &str = "shema";
 const PASSWORD: &str = "test";
 
-pub fn dir(name: &str) -> PathBuf {
+// 192.168.122.100-254 on libvirt's default network
+const IP_POOL: std::ops::RangeInclusive<u8> = 100..=254;
+
+pub fn next_free_ip(conn: &mut PgConnection) -> anyhow::Result<String> {
+    let used: Vec<String> = vm::vms.select(vm::ip_address).load(conn)?;
+    IP_POOL
+        .map(|n| format!("192.168.122.{n}"))
+        .find(|ip| !used.contains(ip))
+        .context("no free IP addresses left")
+}
+
+fn dir(name: &str) -> PathBuf {
     Path::new(BASE).join(name)
 }
 
@@ -20,11 +35,11 @@ pub fn create_files(vm: &Vm) -> anyhow::Result<()> {
     let d = dir(&vm.name);
     fs::create_dir_all(&d)?;
 
-    // cloud-localds needs files on disk; only the resulting iso is kept
+    // cloud init
     let tmp = tempdir(&vm.name)?;
     let user_data = tmp.join("user-data");
     let meta_data = tmp.join("meta-data");
-    fs::write(&user_data, user_data_yaml(&vm.name)?)?;
+    fs::write(&user_data, init_user_data(&vm.name)?)?;
     fs::write(
         &meta_data,
         format!("instance-id: {0}\nlocal-hostname: {0}\n", vm.name),
@@ -50,7 +65,6 @@ pub fn create_files(vm: &Vm) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Grows the disk to the size in the DB (qcow2 can't shrink).
 pub fn resize_disk(vm: &Vm) -> anyhow::Result<()> {
     let disk = dir(&vm.name).join("disk.qcow2");
     run(
@@ -71,7 +85,6 @@ pub fn remove_files(name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Deterministic MAC so the DHCP reservation can be rebuilt from the row alone.
 pub fn mac(ip: &str) -> anyhow::Result<String> {
     let o: Vec<u8> = ip.split('.').map(|s| s.parse()).collect::<Result<_, _>>()?;
     anyhow::ensure!(o.len() == 4, "invalid ip {ip}");
@@ -117,7 +130,7 @@ pub fn domain_xml(vm: &Vm) -> anyhow::Result<String> {
     ))
 }
 
-fn user_data_yaml(hostname: &str) -> anyhow::Result<String> {
+fn init_user_data(hostname: &str) -> anyhow::Result<String> {
     let home = std::env::var("HOME")?;
     let key = fs::read_to_string(format!("{home}/.ssh/id_ed25519.pub"))
         .context("reading ~/.ssh/id_ed25519.pub")?;

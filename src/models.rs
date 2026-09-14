@@ -40,7 +40,6 @@ pub struct NewVm {
     pub disk: i32,
 }
 
-/// User-provided spec; ip and status are filled in by `commands::create`.
 #[derive(Debug)]
 pub struct CreateVm {
     pub name: String,
