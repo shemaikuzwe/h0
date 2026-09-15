@@ -49,7 +49,25 @@ pub fn create_files(vm: &Vm, user: &str, password: &str) -> anyhow::Result<()> {
         &meta_data,
         format!("instance-id: {0}\nlocal-hostname: {0}\n", vm.name),
     )?;
-    run("cloud-localds", [d.join("seed.iso"), user_data, meta_data])?;
+    // explictly needed by kali
+    let net_config = tmp.join("network-config");
+    fs::write(
+        &net_config,
+        format!(
+            "version: 2\nethernets:\n  net0:\n    match:\n      macaddress: '{}'\n    dhcp4: true\n",
+            mac(&vm.ip_address)?
+        ),
+    )?;
+    run(
+        "cloud-localds",
+        [
+            "-N".as_ref(),
+            net_config.as_os_str(),
+            d.join("seed.iso").as_os_str(),
+            user_data.as_os_str(),
+            meta_data.as_os_str(),
+        ],
+    )?;
     fs::remove_dir_all(tmp)?;
 
     let disk = d.join("disk.qcow2");
@@ -125,6 +143,8 @@ pub fn domain_xml(vm: &Vm) -> anyhow::Result<String> {
     </interface>
     <serial type='pty'/>
     <console type='pty'><target type='serial'/></console>
+    <!-- kali's kernel resets in a loop without a display device -->
+    <video><model type='vga'/></video>
   </devices>
 </domain>
 "#,
