@@ -27,6 +27,10 @@ fn dir(name: &str) -> PathBuf {
     Path::new(BASE).join(name)
 }
 
+pub fn disk(name: &str) -> String {
+    dir(name).join("disk.qcow2").to_string_lossy().into_owned()
+}
+
 fn base_image(image: Image) -> anyhow::Result<PathBuf> {
     let p = Path::new(BASE)
         .join("images")
@@ -90,15 +94,46 @@ pub fn create_files(vm: &Vm, user: &str, password: &str, apps: &CloudInit) -> an
 }
 
 pub fn resize_disk(vm: &Vm) -> anyhow::Result<()> {
-    let disk = dir(&vm.name).join("disk.qcow2");
     run(
         "qemu-img",
-        [
-            "resize",
-            disk.to_str().context("bad path")?,
-            &format!("{}G", vm.disk),
-        ],
+        ["resize", &disk(&vm.name), &format!("{}G", vm.disk)],
     )
+}
+
+fn backup_dir(name: &str) -> PathBuf {
+    Path::new(BASE).join("backups").join(name)
+}
+
+/// Path for a new backup file of `vm`; `.qcow2` final, `.tmp.qcow2` for the live copy.
+pub fn backup_path(vm: &str, tmp: bool) -> anyhow::Result<String> {
+    let d = backup_dir(vm);
+    fs::create_dir_all(&d)?;
+    let ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+    let ext = if tmp { "tmp.qcow2" } else { "qcow2" };
+    Ok(d.join(format!("{ts}.{ext}")).to_string_lossy().into_owned())
+}
+
+/// Writes a standalone compressed qcow2 copy of `src` (disk.qcow2 or a live copy of it);
+/// returns (path, size in bytes).
+pub fn backup_create(vm: &str, src: &str) -> anyhow::Result<(String, i64)> {
+    let file = backup_path(vm, false)?;
+    // convert flattens the backing chain, -c compresses
+    run("qemu-img", ["convert", "-O", "qcow2", "-c", src, &file])?;
+    let size = i64::try_from(fs::metadata(&file)?.len())?;
+    Ok((file, size))
+}
+
+/// Overwrites disk.qcow2 with a standalone copy of the backup (no backing image).
+pub fn backup_restore(vm: &str, file: &str) -> anyhow::Result<()> {
+    run("qemu-img", ["convert", "-O", "qcow2", file, &disk(vm)])
+}
+
+pub fn remove_backups(name: &str) -> anyhow::Result<()> {
+    let d = backup_dir(name);
+    if d.exists() {
+        fs::remove_dir_all(d)?;
+    }
+    Ok(())
 }
 
 pub fn remove_files(name: &str) -> anyhow::Result<()> {

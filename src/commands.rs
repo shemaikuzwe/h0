@@ -1,4 +1,5 @@
-use crate::models::{CreateVm, NewVm, Vm, VmStatus, VmUpdate};
+use crate::models::{Backup, CreateVm, NewBackup, NewVm, Vm, VmStatus, VmUpdate};
+use crate::schema::backups::dsl as bk;
 use crate::schema::vms::dsl as vm;
 use crate::{apps, libvirt, provision};
 use anyhow::Context;
@@ -75,16 +76,128 @@ pub async fn stop(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
 }
 
 pub async fn delete(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
-    let target = vm::vms.filter(vm::name.eq(name));
-    let existing: Vm = target
-        .select(Vm::as_select())
-        .first(conn)
-        .with_context(|| format!("no VM found with name '{name}'"))?;
+    let existing = find_vm(conn, name)?;
     let lv = libvirt::connect()?;
     lv.remove(name)?;
     lv.release_ip(&existing)?;
     provision::remove_files(name)?;
-    diesel::delete(target).execute(conn)?;
+    // backups rows cascade
+    diesel::delete(vm::vms.filter(vm::name.eq(name))).execute(conn)?;
+    Ok(())
+}
+
+pub async fn snapshot_create(
+    conn: &mut PgConnection,
+    name: &str,
+    snap: &str,
+) -> anyhow::Result<()> {
+    find_vm(conn, name)?;
+    libvirt::connect()?.snapshot_create(name, snap)
+}
+
+pub async fn snapshot_list(
+    conn: &mut PgConnection,
+    name: &str,
+) -> anyhow::Result<Vec<libvirt::Snapshot>> {
+    find_vm(conn, name)?;
+    libvirt::connect()?.snapshot_list(name)
+}
+
+pub async fn snapshot_revert(
+    conn: &mut PgConnection,
+    name: &str,
+    snap: &str,
+) -> anyhow::Result<()> {
+    find_vm(conn, name)?;
+    let lv = libvirt::connect()?;
+    lv.snapshot_revert(name, snap)?;
+    // VM ends up in the state it had when the snapshot was taken
+    let status = if lv.is_active(name)? {
+        VmStatus::Running
+    } else {
+        VmStatus::Stopped
+    };
+    set_status(conn, name, status)
+}
+
+pub async fn snapshot_delete(
+    conn: &mut PgConnection,
+    name: &str,
+    snap: &str,
+) -> anyhow::Result<()> {
+    find_vm(conn, name)?;
+    libvirt::connect()?.snapshot_delete(name, snap)
+}
+
+pub async fn backup_create(conn: &mut PgConnection, name: &str) -> anyhow::Result<Backup> {
+    let existing = find_vm(conn, name)?;
+    let lv = libvirt::connect()?;
+    // a running disk is copied by libvirt first, then compressed like a stopped one
+    let src = if lv.is_active(name)? {
+        let tmp = provision::backup_path(name, true)?;
+        lv.backup(name, &tmp)?;
+        tmp
+    } else {
+        provision::disk(name)
+    };
+    let result = provision::backup_create(name, &src);
+    if src != provision::disk(name) {
+        std::fs::remove_file(&src)?;
+    }
+    let (file, size_bytes) = result?;
+    let new_backup = NewBackup {
+        vm_id: existing.id,
+        file,
+        size_bytes,
+    };
+    Ok(diesel::insert_into(bk::backups)
+        .values(&new_backup)
+        .get_result(conn)?)
+}
+
+pub async fn backup_list(conn: &mut PgConnection, name: &str) -> anyhow::Result<Vec<Backup>> {
+    let existing = find_vm(conn, name)?;
+    Ok(bk::backups
+        .filter(bk::vm_id.eq(existing.id))
+        .order(bk::id.asc())
+        .load(conn)?)
+}
+
+pub async fn backup_restore(conn: &mut PgConnection, name: &str, id: i32) -> anyhow::Result<()> {
+    let backup = find_backup(conn, name, id)?;
+    ensure_stopped(name)?;
+    provision::backup_restore(name, &backup.file)
+}
+
+pub async fn backup_delete(conn: &mut PgConnection, name: &str, id: i32) -> anyhow::Result<()> {
+    let backup = find_backup(conn, name, id)?;
+    std::fs::remove_file(&backup.file)?;
+    diesel::delete(bk::backups.filter(bk::id.eq(id))).execute(conn)?;
+    Ok(())
+}
+
+fn find_vm(conn: &mut PgConnection, name: &str) -> anyhow::Result<Vm> {
+    vm::vms
+        .filter(vm::name.eq(name))
+        .select(Vm::as_select())
+        .first(conn)
+        .with_context(|| format!("no VM found with name '{name}'"))
+}
+
+fn find_backup(conn: &mut PgConnection, name: &str, id: i32) -> anyhow::Result<Backup> {
+    let existing = find_vm(conn, name)?;
+    bk::backups
+        .filter(bk::id.eq(id).and(bk::vm_id.eq(existing.id)))
+        .select(Backup::as_select())
+        .first(conn)
+        .with_context(|| format!("no backup {id} for '{name}'"))
+}
+
+fn ensure_stopped(name: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !libvirt::connect()?.is_active(name)?,
+        "'{name}' is running, stop it first"
+    );
     Ok(())
 }
 

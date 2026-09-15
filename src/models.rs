@@ -1,7 +1,9 @@
 use std::fmt::{self};
 
 use crate::apps::App;
-use crate::schema::{sql_types::VmImage as VmImageSql, sql_types::VmStatus as VmStatusSql, vms};
+use crate::schema::{
+    backups, sql_types::VmImage as VmImageSql, sql_types::VmStatus as VmStatusSql, vms,
+};
 use clap::ValueEnum;
 use colored::Colorize;
 use diesel::prelude::*;
@@ -104,4 +106,23 @@ impl VmUpdate {
     pub fn is_empty(&self) -> bool {
         self.cpu.is_none() && self.memory.is_none() && self.disk.is_none()
     }
+}
+
+#[derive(Debug, Queryable, Selectable)]
+#[diesel(table_name = backups)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct Backup {
+    pub id: i32,
+    pub vm_id: i32,
+    pub file: String,
+    pub size_bytes: i64,
+    pub created_at: chrono::NaiveDateTime,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = backups)]
+pub struct NewBackup {
+    pub vm_id: i32,
+    pub file: String,
+    pub size_bytes: i64,
 }

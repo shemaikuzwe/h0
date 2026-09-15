@@ -11,6 +11,17 @@ pub mod sql_types {
 }
 
 diesel::table! {
+    backups (id) {
+        id -> Int4,
+        vm_id -> Int4,
+        #[max_length = 255]
+        file -> Varchar,
+        size_bytes -> Int8,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     use diesel::sql_types::*;
     use super::sql_types::VmStatus;
     use super::sql_types::VmImage;
@@ -30,3 +41,7 @@ diesel::table! {
         image -> VmImage,
     }
 }
+
+diesel::joinable!(backups -> vms (vm_id));
+
+diesel::allow_tables_to_appear_in_same_query!(backups, vms,);
