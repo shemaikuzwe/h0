@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 use h0::{
     apps::App,
-    commands, establish_connection,
+    commands, console, establish_connection,
     models::{CreateVm, Image, VmUpdate},
 };
 
@@ -30,6 +30,12 @@ enum Commands {
     Stop { name: String },
     #[command(about = "Reboots vm")]
     Reboot { name: String },
+    #[command(about = "Opens a web console attached to the VM's serial port")]
+    Console {
+        name: String,
+        #[arg(long, help = "Port to bind server")]
+        port: Option<u32>,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -68,7 +74,7 @@ struct CreateVmArgs {
 }
 
 impl Commands {
-    pub fn execute(&self) -> anyhow::Result<()> {
+    pub async fn execute(&self) -> anyhow::Result<()> {
         let mut conn = establish_connection()?;
         match self {
             Commands::Create(args) => {
@@ -83,7 +89,8 @@ impl Commands {
                         image: args.image,
                         apps: args.apps.clone(),
                     },
-                )?;
+                )
+                .await?;
                 println!(
                     "created {}: ssh {}@{}",
                     vm.name.green(),
@@ -92,11 +99,11 @@ impl Commands {
                 );
             }
             Commands::Delete { name } => {
-                commands::delete(&mut conn, name)?;
+                commands::delete(&mut conn, name).await?;
                 println!("deleted {}", name.red());
             }
             Commands::List => {
-                let all = commands::list(&mut conn)?;
+                let all = commands::list(&mut conn).await?;
                 if all.is_empty() {
                     println!("no VMs");
                     return Ok(());
@@ -122,27 +129,30 @@ impl Commands {
                     disk: args.disk,
                 };
                 let vm =
-                    commands::update(&mut conn, &args.name, changes, args.reboot.unwrap_or(true))?;
+                    commands::update(&mut conn, &args.name, changes, args.reboot.unwrap_or(true))
+                        .await?;
                 println!("updated {}", vm.name.green());
             }
             Commands::Run { name } => {
-                commands::run(&mut conn, name)?;
+                commands::run(&mut conn, name).await?;
                 println!("started {}", name.green());
             }
             Commands::Stop { name } => {
-                commands::stop(&mut conn, name)?;
+                commands::stop(&mut conn, name).await?;
                 println!("stopping {}", name.red());
             }
             Commands::Reboot { name } => {
-                commands::reboot(name)?;
+                commands::reboot(name).await?;
                 println!("Rebooted {}", name.green())
             }
+            Commands::Console { name, port } => console::serve(name, port.unwrap_or(8080)).await?,
         }
         Ok(())
     }
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    cli.command.execute()
+    cli.command.execute().await
 }

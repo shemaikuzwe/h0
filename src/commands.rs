@@ -5,7 +5,7 @@ use anyhow::Context;
 use diesel::PgConnection;
 use diesel::prelude::*;
 
-pub fn create(conn: &mut PgConnection, spec: CreateVm) -> anyhow::Result<Vm> {
+pub async fn create(conn: &mut PgConnection, spec: CreateVm) -> anyhow::Result<Vm> {
     let init = apps::cloud_init(&spec.apps, spec.image, &spec.user)?;
     let password = rpassword::prompt_password("User password: ").context("Password is required")?;
     let new_vm = NewVm {
@@ -25,17 +25,17 @@ pub fn create(conn: &mut PgConnection, spec: CreateVm) -> anyhow::Result<Vm> {
         let lv = libvirt::connect()?;
         lv.define(&created)?;
         lv.reserve_ip(&created)?;
-        run(conn, &created.name)?;
+        start(conn, &created.name)?;
         Ok(created)
     })
 }
 
-pub fn list(conn: &mut PgConnection) -> anyhow::Result<Vec<Vm>> {
+pub async fn list(conn: &mut PgConnection) -> anyhow::Result<Vec<Vm>> {
     let all = vm::vms.order(vm::id.asc()).load::<Vm>(conn)?;
     Ok(all)
 }
 
-pub fn update(
+pub async fn update(
     conn: &mut PgConnection,
     name: &str,
     changes: VmUpdate,
@@ -61,21 +61,20 @@ pub fn update(
     })
 }
 
-pub fn run(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
-    libvirt::connect()?.start(name)?;
-    set_status(conn, name, VmStatus::Running)
+pub async fn run(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
+    start(conn, name)
 }
-pub fn reboot(name: &str) -> anyhow::Result<()> {
+pub async fn reboot(name: &str) -> anyhow::Result<()> {
     libvirt::connect()?.reboot(name)?;
     Ok(())
 }
 
-pub fn stop(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
+pub async fn stop(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
     libvirt::connect()?.shutdown(name)?;
     set_status(conn, name, VmStatus::Stopped)
 }
 
-pub fn delete(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
+pub async fn delete(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
     let target = vm::vms.filter(vm::name.eq(name));
     let existing: Vm = target
         .select(Vm::as_select())
@@ -87,6 +86,12 @@ pub fn delete(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
     provision::remove_files(name)?;
     diesel::delete(target).execute(conn)?;
     Ok(())
+}
+
+// sync so create() can call it inside its transaction
+fn start(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
+    libvirt::connect()?.start(name)?;
+    set_status(conn, name, VmStatus::Running)
 }
 
 fn set_status(conn: &mut PgConnection, name: &str, status: VmStatus) -> anyhow::Result<()> {

@@ -8,7 +8,6 @@ pub enum App {
     Caddy,
 }
 
-/// `packages:` and `runcmd:` sections of a cloud-config, run once at first boot.
 #[derive(Debug, Default)]
 pub struct CloudInit {
     packages: Vec<&'static str>,
