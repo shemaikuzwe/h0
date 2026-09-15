@@ -1,3 +1,4 @@
+use crate::apps::CloudInit;
 use crate::models::{Image, Vm};
 use anyhow::Context;
 use diesel::PgConnection;
@@ -35,7 +36,7 @@ fn base_image(image: Image) -> anyhow::Result<PathBuf> {
 }
 
 /// Creates the VM directory with its cloud-init seed and COW disk.
-pub fn create_files(vm: &Vm, user: &str, password: &str) -> anyhow::Result<()> {
+pub fn create_files(vm: &Vm, user: &str, password: &str, apps: &CloudInit) -> anyhow::Result<()> {
     let image = base_image(vm.image)?;
     let d = dir(&vm.name);
     fs::create_dir_all(&d)?;
@@ -44,7 +45,7 @@ pub fn create_files(vm: &Vm, user: &str, password: &str) -> anyhow::Result<()> {
     let tmp = tempdir(&vm.name)?;
     let user_data = tmp.join("user-data");
     let meta_data = tmp.join("meta-data");
-    fs::write(&user_data, init_user_data(&vm.name, user, password)?)?;
+    fs::write(&user_data, init_user_data(vm, user, password, apps)?)?;
     fs::write(
         &meta_data,
         format!("instance-id: {0}\nlocal-hostname: {0}\n", vm.name),
@@ -156,7 +157,7 @@ pub fn domain_xml(vm: &Vm) -> anyhow::Result<String> {
     ))
 }
 
-fn init_user_data(hostname: &str, user: &str, password: &str) -> anyhow::Result<String> {
+fn init_user_data(vm: &Vm, user: &str, password: &str, apps: &CloudInit) -> anyhow::Result<String> {
     let home = std::env::var("HOME")?;
     let key = fs::read_to_string(format!("{home}/.ssh/id_ed25519.pub"))
         .context("reading ~/.ssh/id_ed25519.pub")?;
@@ -171,9 +172,11 @@ users:
     lock_passwd: false
     plain_text_passwd: {password}
     ssh_authorized_keys:
-      - {}
-",
-        key.trim()
+      - {key}
+{apps}",
+        hostname = vm.name,
+        key = key.trim(),
+        apps = apps.render(),
     ))
 }
 

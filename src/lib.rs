@@ -1,3 +1,4 @@
+pub mod apps;
 pub mod commands;
 pub mod libvirt;
 pub mod models;

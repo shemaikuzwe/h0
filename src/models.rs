@@ -1,5 +1,6 @@
 use std::fmt::{self};
 
+use crate::apps::App;
 use crate::schema::{sql_types::VmImage as VmImageSql, sql_types::VmStatus as VmStatusSql, vms};
 use clap::ValueEnum;
 use colored::Colorize;
@@ -88,6 +89,7 @@ pub struct CreateVm {
     pub disk: i32,
     pub user: String,
     pub image: Image,
+    pub apps: Vec<App>,
 }
 
 #[derive(Debug, AsChangeset)]

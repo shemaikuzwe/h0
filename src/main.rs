@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use h0::{
+    apps::App,
     commands, establish_connection,
     models::{CreateVm, Image, VmUpdate},
 };
@@ -57,6 +58,13 @@ struct CreateVmArgs {
     user: String,
     #[arg(long, value_enum, default_value_t = Image::Ubuntu24, help = "Base image")]
     image: Image,
+    #[arg(
+        long,
+        value_enum,
+        value_delimiter = ',',
+        help = "Apps to install on first boot (docker,nginx,caddy)"
+    )]
+    apps: Vec<App>,
 }
 
 impl Commands {
@@ -73,6 +81,7 @@ impl Commands {
                         disk: args.disk.unwrap_or(10),
                         user: args.user.to_owned(),
                         image: args.image,
+                        apps: args.apps.clone(),
                     },
                 )?;
                 println!(

@@ -1,11 +1,12 @@
 use crate::models::{CreateVm, NewVm, Vm, VmStatus, VmUpdate};
 use crate::schema::vms::dsl as vm;
-use crate::{libvirt, provision};
+use crate::{apps, libvirt, provision};
 use anyhow::Context;
 use diesel::PgConnection;
 use diesel::prelude::*;
 
 pub fn create(conn: &mut PgConnection, spec: CreateVm) -> anyhow::Result<Vm> {
+    let init = apps::cloud_init(&spec.apps, spec.image, &spec.user)?;
     let password = rpassword::prompt_password("User password: ").context("Password is required")?;
     let new_vm = NewVm {
         name: spec.name,
@@ -20,7 +21,7 @@ pub fn create(conn: &mut PgConnection, spec: CreateVm) -> anyhow::Result<Vm> {
         let created = diesel::insert_into(vm::vms)
             .values(&new_vm)
             .get_result::<Vm>(conn)?;
-        provision::create_files(&created, &spec.user, &password)?;
+        provision::create_files(&created, &spec.user, &password, &init)?;
         let lv = libvirt::connect()?;
         lv.define(&created)?;
         lv.reserve_ip(&created)?;
