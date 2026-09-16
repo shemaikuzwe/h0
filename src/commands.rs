@@ -10,11 +10,13 @@ use diesel::prelude::*;
 pub async fn create(conn: &mut PgConnection, spec: CreateVm) -> anyhow::Result<Vm> {
     let init = apps::cloud_init(&spec.apps, spec.image, &spec.user)?;
     let password = rpassword::prompt_password("User password: ").context("Password is required")?;
+    // Kali hangs/OOMs below ~2.5GB RAM and needs ~30GB disk; clamp up, never down.
+    let (cpu, memory, disk) = spec.image.get_resources(spec.cpu, spec.memory, spec.disk);
     let new_vm = NewVm {
         name: spec.name,
-        cpu: spec.cpu,
-        memory: spec.memory,
-        disk: spec.disk,
+        cpu,
+        memory,
+        disk,
         status: VmStatus::Stopped,
         ip_address: provision::next_free_ip(conn)?,
         image: spec.image,
@@ -49,6 +51,25 @@ pub async fn update(
     if changes.is_empty() {
         return Ok(target.select(Vm::as_select()).first(conn)?);
     }
+    let current: Vm = target.clone().select(Vm::as_select()).first(conn)?;
+    if let Some(disk) = changes.disk {
+        anyhow::ensure!(
+            disk >= current.disk,
+            "disk can only grow ({} GB -> {} GB requested)",
+            current.disk,
+            disk
+        );
+    }
+    let (cpu, memory, disk) = current.image.get_resources(
+        changes.cpu.unwrap_or(current.cpu),
+        changes.memory.unwrap_or(current.memory),
+        changes.disk.unwrap_or(current.disk),
+    );
+    let changes = VmUpdate {
+        cpu: changes.cpu.map(|_| cpu),
+        memory: changes.memory.map(|_| memory),
+        disk: changes.disk.map(|_| disk),
+    };
     conn.transaction(|conn| {
         let updated: Vm = diesel::update(target).set(&changes).get_result(conn)?;
         let storage = storage::open();

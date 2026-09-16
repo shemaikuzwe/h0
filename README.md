@@ -14,7 +14,7 @@ h0 CLI + Postgres        ← this repo: create / list / update / run / stop / de
 
 ### 1. Host requirements
 
-- Linux with KVM (`ls /dev/kvm` must exist; `lscpu | grep Virtualization` shows VT-x/AMD-V)
+- Linux OS with KVM (`ls /dev/kvm` must exist; `lscpu | grep Virtualization` shows VT-x/AMD-V)
 - Postgres
 - Rust toolchain
 

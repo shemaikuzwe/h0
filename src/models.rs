@@ -55,6 +55,18 @@ impl fmt::Display for Image {
     }
 }
 
+impl Image {
+    /// Kali's desktop OOMs/hangs under ~2.5GB RAM and its default
+    /// layout needs ~30GB disk; other images stay lean.
+    pub fn get_resources(&self, cpu: i32, memory: i32, disk: i32) -> (i32, i32, i32) {
+        let (mc, mm, md) = match self {
+            Image::Kali => (1, 2500, 30),
+            _ => (1, 500, 10),
+        };
+        (cpu.max(mc), memory.max(mm), disk.max(md))
+    }
+}
+
 #[derive(Debug, Clone, Queryable, Selectable)]
 #[diesel(table_name = vms)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
