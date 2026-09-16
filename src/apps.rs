@@ -35,6 +35,8 @@ impl CloudInit {
 
 pub fn cloud_init(apps: &[App], image: Image, user: &str) -> anyhow::Result<CloudInit> {
     let mut ci = CloudInit::default();
+    // lets the host freeze the guest filesystem for consistent snapshots
+    ci.packages.push("qemu-guest-agent");
     // ubuntu/kali are apt based, centos is dnf
     let apt = image != Image::Centos10;
     for app in apps {

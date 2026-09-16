@@ -36,7 +36,7 @@ enum Commands {
         #[arg(long, help = "Port to bind server")]
         port: Option<u32>,
     },
-    #[command(about = "Manages VM snapshots (disk + memory when running)")]
+    #[command(about = "Manages disk snapshots (revert requires a stopped VM)")]
     Snapshot {
         #[command(subcommand)]
         cmd: SnapshotCmd,

@@ -5,6 +5,7 @@ pub mod libvirt;
 pub mod models;
 pub mod provision;
 pub mod schema;
+pub mod storage;
 
 use anyhow::Context;
 use diesel::pg::PgConnection;
