@@ -36,6 +36,55 @@ enum Commands {
         #[arg(long, help = "Port to bind server")]
         port: Option<u32>,
     },
+    #[command(about = "Manages disk snapshots (revert requires a stopped VM)")]
+    Snapshot {
+        #[command(subcommand)]
+        cmd: SnapshotCmd,
+    },
+    #[command(about = "Manages disk backups (restore requires a stopped VM)")]
+    Backup {
+        #[command(subcommand)]
+        cmd: BackupCmd,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SnapshotCmd {
+    Create {
+        vm: String,
+        name: String,
+    },
+    #[command(alias = "ls")]
+    List {
+        vm: String,
+    },
+    Revert {
+        vm: String,
+        name: String,
+    },
+    Delete {
+        vm: String,
+        name: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum BackupCmd {
+    Create {
+        vm: String,
+    },
+    #[command(alias = "ls")]
+    List {
+        vm: String,
+    },
+    Restore {
+        vm: String,
+        id: i32,
+    },
+    Delete {
+        vm: String,
+        id: i32,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -146,6 +195,58 @@ impl Commands {
                 println!("Rebooted {}", name.green())
             }
             Commands::Console { name, port } => console::serve(name, port.unwrap_or(8080)).await?,
+            Commands::Snapshot { cmd } => match cmd {
+                SnapshotCmd::Create { vm, name } => {
+                    commands::snapshot_create(&mut conn, vm, name).await?;
+                    println!("snapshot {} created", name.green());
+                }
+                SnapshotCmd::List { vm } => {
+                    let all = commands::snapshot_list(&mut conn, vm).await?;
+                    if all.is_empty() {
+                        println!("no snapshots");
+                        return Ok(());
+                    }
+                    println!("{:<20}{}", "NAME", "CREATED");
+                    for s in all {
+                        println!("{:<20}{}", s.name, s.created_at.format("%Y-%m-%d %H:%M:%S"));
+                    }
+                }
+                SnapshotCmd::Revert { vm, name } => {
+                    commands::snapshot_revert(&mut conn, vm, name).await?;
+                    println!("reverted {} to {}", vm.green(), name.green());
+                }
+                SnapshotCmd::Delete { vm, name } => {
+                    commands::snapshot_delete(&mut conn, vm, name).await?;
+                    println!("snapshot {} deleted", name.red());
+                }
+            },
+            Commands::Backup { cmd } => match cmd {
+                BackupCmd::Create { vm } => {
+                    let b = commands::backup_create(&mut conn, vm).await?;
+                    println!("backup {} created: {}", b.id.to_string().green(), b.file);
+                }
+                BackupCmd::List { vm } => {
+                    let all = commands::backup_list(&mut conn, vm).await?;
+                    if all.is_empty() {
+                        println!("no backups");
+                        return Ok(());
+                    }
+                    println!("{:<6}{:<10}{:<22}{}", "ID", "SIZE", "CREATED", "FILE");
+                    for b in all {
+                        let size = format!("{} MB", b.size_bytes / 1_000_000);
+                        let created = b.created_at.format("%Y-%m-%d %H:%M:%S");
+                        println!("{:<6}{:<10}{:<22}{}", b.id, size, created, b.file);
+                    }
+                }
+                BackupCmd::Restore { vm, id } => {
+                    commands::backup_restore(&mut conn, vm, *id).await?;
+                    println!("restored {} from backup {}", vm.green(), id);
+                }
+                BackupCmd::Delete { vm, id } => {
+                    commands::backup_delete(&mut conn, vm, *id).await?;
+                    println!("backup {} deleted", id.to_string().red());
+                }
+            },
         }
         Ok(())
     }

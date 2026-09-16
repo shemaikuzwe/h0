@@ -1,5 +1,6 @@
 use crate::apps::CloudInit;
-use crate::models::{Image, Vm};
+use crate::models::Vm;
+use crate::storage::Disk;
 use anyhow::Context;
 use diesel::PgConnection;
 use diesel::prelude::*;
@@ -27,17 +28,8 @@ fn dir(name: &str) -> PathBuf {
     Path::new(BASE).join(name)
 }
 
-fn base_image(image: Image) -> anyhow::Result<PathBuf> {
-    let p = Path::new(BASE)
-        .join("images")
-        .join(format!("{}.qcow2", image));
-    anyhow::ensure!(p.exists(), "image '{}' is not installed", image);
-    Ok(p)
-}
-
-/// Creates the VM directory with its cloud-init seed and COW disk.
+/// Creates the VM directory with its cloud-init seed.
 pub fn create_files(vm: &Vm, user: &str, password: &str, apps: &CloudInit) -> anyhow::Result<()> {
-    let image = base_image(vm.image)?;
     let d = dir(&vm.name);
     fs::create_dir_all(&d)?;
 
@@ -70,35 +62,28 @@ pub fn create_files(vm: &Vm, user: &str, password: &str, apps: &CloudInit) -> an
         ],
     )?;
     fs::remove_dir_all(tmp)?;
-
-    let disk = d.join("disk.qcow2");
-    run(
-        "qemu-img",
-        [
-            "create",
-            "-f",
-            "qcow2",
-            "-F",
-            "qcow2",
-            "-b",
-            image.to_str().context("bad path")?,
-            disk.to_str().context("bad path")?,
-            &format!("{}G", vm.disk),
-        ],
-    )?;
     Ok(())
 }
 
-pub fn resize_disk(vm: &Vm) -> anyhow::Result<()> {
-    let disk = dir(&vm.name).join("disk.qcow2");
-    run(
-        "qemu-img",
-        [
-            "resize",
-            disk.to_str().context("bad path")?,
-            &format!("{}G", vm.disk),
-        ],
-    )
+fn backup_dir(name: &str) -> PathBuf {
+    Path::new(BASE).join("backups").join(name)
+}
+
+pub fn backup_path(vm: &str) -> anyhow::Result<String> {
+    let d = backup_dir(vm);
+    fs::create_dir_all(&d)?;
+    let ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+    Ok(d.join(format!("{ts}.zfs.zst"))
+        .to_string_lossy()
+        .into_owned())
+}
+
+pub fn remove_backups(name: &str) -> anyhow::Result<()> {
+    let d = backup_dir(name);
+    if d.exists() {
+        fs::remove_dir_all(d)?;
+    }
+    Ok(())
 }
 
 pub fn remove_files(name: &str) -> anyhow::Result<()> {
@@ -116,8 +101,26 @@ pub fn mac(ip: &str) -> anyhow::Result<String> {
     Ok(format!("52:54:00:{:02x}:{:02x}:{:02x}", o[1], o[2], o[3]))
 }
 
-pub fn domain_xml(vm: &Vm) -> anyhow::Result<String> {
+pub fn domain_xml(vm: &Vm, disk: &Disk) -> anyhow::Result<String> {
     let d = dir(&vm.name);
+    let disk_xml = match disk {
+        Disk::Block(p) => format!(
+            "<disk type='block' device='disk'>
+      <driver name='qemu' type='raw' cache='none' io='native' discard='unmap'/>
+      <source dev='{}'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>",
+            p.display()
+        ),
+        Disk::File { path, format } => format!(
+            "<disk type='file' device='disk'>
+      <driver name='qemu' type='{format}'/>
+      <source file='{}'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>",
+            path.display()
+        ),
+    };
     Ok(format!(
         r#"<domain type='kvm'>
   <name>{name}</name>
@@ -126,11 +129,7 @@ pub fn domain_xml(vm: &Vm) -> anyhow::Result<String> {
   <os><type arch='x86_64' machine='q35'>hvm</type></os>
   <cpu mode='host-passthrough'/>
   <devices>
-    <disk type='file' device='disk'>
-      <driver name='qemu' type='qcow2'/>
-      <source file='{dir}/disk.qcow2'/>
-      <target dev='vda' bus='virtio'/>
-    </disk>
+    {disk_xml}
     <disk type='file' device='cdrom'>
       <driver name='qemu' type='raw'/>
       <source file='{dir}/seed.iso'/>
@@ -144,6 +143,7 @@ pub fn domain_xml(vm: &Vm) -> anyhow::Result<String> {
     </interface>
     <serial type='pty'/>
     <console type='pty'><target type='serial'/></console>
+    <channel type='unix'><target type='virtio' name='org.qemu.guest_agent.0'/></channel>
     <!-- kali's kernel resets in a loop without a display device -->
     <video><model type='vga'/></video>
   </devices>

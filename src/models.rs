@@ -1,7 +1,9 @@
 use std::fmt::{self};
 
 use crate::apps::App;
-use crate::schema::{sql_types::VmImage as VmImageSql, sql_types::VmStatus as VmStatusSql, vms};
+use crate::schema::{
+    backups, sql_types::VmImage as VmImageSql, sql_types::VmStatus as VmStatusSql, vms,
+};
 use clap::ValueEnum;
 use colored::Colorize;
 use diesel::prelude::*;
@@ -50,6 +52,18 @@ impl fmt::Display for Image {
             Image::Centos10 => f.pad("centos10"),
             Image::Kali => f.pad("kali"),
         }
+    }
+}
+
+impl Image {
+    /// Kali's desktop OOMs/hangs under ~2.5GB RAM and its default
+    /// layout needs ~30GB disk; other images stay lean.
+    pub fn get_resources(&self, cpu: i32, memory: i32, disk: i32) -> (i32, i32, i32) {
+        let (mc, mm, md) = match self {
+            Image::Kali => (1, 2500, 30),
+            _ => (1, 500, 10),
+        };
+        (cpu.max(mc), memory.max(mm), disk.max(md))
     }
 }
 
@@ -104,4 +118,23 @@ impl VmUpdate {
     pub fn is_empty(&self) -> bool {
         self.cpu.is_none() && self.memory.is_none() && self.disk.is_none()
     }
+}
+
+#[derive(Debug, Queryable, Selectable)]
+#[diesel(table_name = backups)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct Backup {
+    pub id: i32,
+    pub vm_id: i32,
+    pub file: String,
+    pub size_bytes: i64,
+    pub created_at: chrono::NaiveDateTime,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = backups)]
+pub struct NewBackup {
+    pub vm_id: i32,
+    pub file: String,
+    pub size_bytes: i64,
 }

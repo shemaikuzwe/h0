@@ -1,0 +1,7 @@
+CREATE TABLE backups (
+    id SERIAL PRIMARY KEY,
+    vm_id INT NOT NULL REFERENCES vms(id) ON DELETE CASCADE,
+    file VARCHAR(255) NOT NULL,
+    size_bytes BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now()
+);

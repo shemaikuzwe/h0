@@ -1,5 +1,6 @@
 use crate::models::Vm;
 use crate::provision;
+use crate::storage::Disk;
 use anyhow::Context;
 use virt::connect::Connect;
 use virt::domain::Domain;
@@ -18,8 +19,8 @@ pub fn connect() -> anyhow::Result<Libvirt> {
 }
 
 impl Libvirt {
-    pub fn define(&self, vm: &Vm) -> anyhow::Result<()> {
-        let mut xml = provision::domain_xml(vm)?;
+    pub fn define(&self, vm: &Vm, disk: &Disk) -> anyhow::Result<()> {
+        let mut xml = provision::domain_xml(vm, disk)?;
         if let Ok(existing) = Domain::lookup_by_name(&self.conn, &vm.name) {
             let uuid = existing.get_uuid_string()?;
             xml = xml.replacen("</name>", &format!("</name>\n  <uuid>{uuid}</uuid>"), 1);
@@ -48,13 +49,30 @@ impl Libvirt {
         }
         Ok(())
     }
+    /// Storage already grew the disk; a running guest needs QEMU to re-read its size.
     pub fn resize_disk(&self, vm: &Vm) -> anyhow::Result<()> {
         let dom = self.domain(&vm.name)?;
-        if !dom.is_active()? {
-            return provision::resize_disk(vm);
+        if dom.is_active()? {
+            let kib = u64::try_from(vm.disk)? * 1024 * 1024;
+            dom.block_resize("vda", kib, 0)?;
         }
-        let kib = u64::try_from(vm.disk)? * 1024 * 1024;
-        dom.block_resize("vda", kib, 0)?;
+        Ok(())
+    }
+
+    pub fn is_active(&self, name: &str) -> anyhow::Result<bool> {
+        Ok(self.domain(name)?.is_active()?)
+    }
+
+    /// Guest flushes and quiesces its filesystems so a disk snapshot is consistent.
+    pub fn fs_freeze(&self, name: &str) -> anyhow::Result<()> {
+        self.domain(name)?
+            .qemu_agent_command(r#"{"execute":"guest-fsfreeze-freeze"}"#, 5, 0)?;
+        Ok(())
+    }
+
+    pub fn fs_thaw(&self, name: &str) -> anyhow::Result<()> {
+        self.domain(name)?
+            .qemu_agent_command(r#"{"execute":"guest-fsfreeze-thaw"}"#, 5, 0)?;
         Ok(())
     }
 
